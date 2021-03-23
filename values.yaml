@@ -22,10 +22,6 @@ imagePullSecrets: []
 # ConfigurableHTTPProxy speaks with the actual ConfigurableHTTPProxy server in
 # the proxy pod.
 hub:
-  config:
-    JupyterHub:
-      admin_access: true
-      authenticator_class: dummy
   service:
     type: ClusterIP
     annotations: {}
@@ -75,7 +71,7 @@ hub:
   extraVolumeMounts: []
   image:
     name: jupyterhub/k8s-hub
-    tag: '0.11.1'
+    tag: '0.10.2'
     pullPolicy: ''
     pullSecrets: []
   resources:
@@ -88,7 +84,7 @@ hub:
     allowPrivilegeEscalation: false
   services: {}
   pdb:
-    enabled: false
+    enabled: true
     minAvailable: 1
   networkPolicy:
     enabled: true
@@ -113,22 +109,16 @@ hub:
   templatePaths: []
   templateVars: {}
   livenessProbe:
-    # The livenessProbe's aim to give JupyterHub sufficient time to startup but
-    # be able to restart if it becomes unresponsive for ~5 min.
-    enabled: true
-    initialDelaySeconds: 300
+    enabled: false
+    initialDelaySeconds: 180
     periodSeconds: 10
-    failureThreshold: 30
-    timeoutSeconds: 3
+    failureThreshold: 3
+    timeoutSeconds: 1
   readinessProbe:
-    # The readinessProbe's aim is to provide a successful startup indication,
-    # but following that never become unready before its livenessProbe fail and
-    # restarts it if needed. To become unready following startup serves no
-    # purpose as there are no other pod to fallback to in our non-HA deployment.
     enabled: true
     initialDelaySeconds: 0
     periodSeconds: 2
-    failureThreshold: 1000
+    failureThreshold: 3
     timeoutSeconds: 1
   existingSecret:
 
@@ -199,7 +189,6 @@ proxy:
       enabled: true
       initialDelaySeconds: 0
       periodSeconds: 2
-      failureThreshold: 1000
     resources:
       requests:
         cpu: 200m
@@ -216,9 +205,6 @@ proxy:
                 cidr: 0.0.0.0/0
       interNamespaceAccessLabels: ignore
       allowedIngressPorts: [http, https]
-    pdb:
-      enabled: false
-      minAvailable: 1
   # traefik relates to the autohttps pod, which is responsible for TLS
   # termination when proxy.https.type=letsencrypt.
   traefik:
@@ -228,12 +214,10 @@ proxy:
       allowPrivilegeEscalation: false
     image:
       name: traefik
-      # If you bump the tag for Traefik, please help out by keeping an eye out
-      # for intermittency failures in the test suite on acquiring HTTPS
-      # certificates as there has been a lot of struggles with in this in the
-      # past. For example:
+      # tag for Traefik should be thoroughly tested before bumping, because it
+      # has been prone to have intermittency issues in the past. See for example
       # https://github.com/jupyterhub/zero-to-jupyterhub-k8s/pull/1857.
-      tag: v2.3.7 # ref: https://hub.docker.com/_/traefik?tab=tags
+      tag: v2.3.2 # ref: https://hub.docker.com/_/traefik?tab=tags
       pullPolicy: ''
       pullSecrets: []
     hsts:
@@ -248,7 +232,6 @@ proxy:
     extraDynamicConfig: {}
     nodeSelector: {}
     tolerations: []
-    extraPorts: []
     networkPolicy:
       enabled: true
       ingress: []
@@ -258,9 +241,6 @@ proxy:
                 cidr: 0.0.0.0/0
       interNamespaceAccessLabels: ignore
       allowedIngressPorts: [http, https]
-    pdb:
-      enabled: false
-      minAvailable: 1
   secretSync:
     containerSecurityContext:
       runAsUser: 65534  # nobody user
@@ -268,11 +248,14 @@ proxy:
       allowPrivilegeEscalation: false
     image:
       name: jupyterhub/k8s-secret-sync
-      tag: '0.11.1'
+      tag: '0.10.2'
       pullPolicy: ''
       pullSecrets: []
     resources: {}
   labels: {}
+  pdb:
+    enabled: true
+    minAvailable: 1
   https:
     enabled: false
     type: letsencrypt
@@ -289,6 +272,26 @@ proxy:
       key: tls.key
       crt: tls.crt
     hosts: []
+
+
+# auth relates to the configuration of JupyterHub's Authenticator class.
+auth:
+  type: dummy
+  whitelist:
+    users:
+  admin:
+    access: true
+    users:
+  dummy:
+    password:
+  ldap:
+    dn:
+      search: {}
+      user: {}
+    user: {}
+  state:
+    enabled: false
+    cryptoKey:
 
 
 # singleuser relates to the configuration of KubeSpawner which runs in the hub
@@ -309,7 +312,7 @@ singleuser:
   networkTools:
     image:
       name: jupyterhub/k8s-network-tools
-      tag: '0.11.1'
+      tag: '0.10.2'
       pullPolicy: ''
       pullSecrets: []
   cloudMetadata:
@@ -362,7 +365,7 @@ singleuser:
       storageAccessModes: [ReadWriteOnce]
   image:
     name: jupyterhub/k8s-singleuser-sample
-    tag: '0.11.1'
+    tag: '0.10.2'
     pullPolicy: ''
     pullSecrets: []
   startTimeout: 300
@@ -418,11 +421,8 @@ scheduling:
       runAsGroup: 65534 # nobody group
       allowPrivilegeEscalation: false
     image:
-      # IMPORTANT: Bumping the minor version of this binary should go hand in
-      #            hand with an inspection of the user-scheduelrs RBAC resources
-      #            that we have forked.
       name: k8s.gcr.io/kube-scheduler
-      tag: v1.19.7
+      tag: v1.19.2
       pullPolicy: ''
       pullSecrets: []
     nodeSelector: {}
@@ -465,14 +465,13 @@ prePuller:
     runAsUser: 65534  # nobody user
     runAsGroup: 65534 # nobody group
     allowPrivilegeEscalation: false
-  extraTolerations: []
   # hook relates to the hook-image-awaiter Job and hook-image-puller DaemonSet
   hook:
     enabled: true
     # image and the configuration below relates to the hook-image-awaiter Job
     image:
       name: jupyterhub/k8s-image-awaiter
-      tag: '0.11.1'
+      tag: '0.10.2'
       pullPolicy: ''
       pullSecrets: []
     containerSecurityContext:
@@ -482,10 +481,6 @@ prePuller:
     podSchedulingWaitDuration: 10
     nodeSelector: {}
     tolerations: []
-    resources:
-      requests:
-        cpu: 0
-        memory: 0
   continuous:
     enabled: true
   pullProfileListImages: true
@@ -521,5 +516,3 @@ cull:
 
 debug:
   enabled: false
-
-global: {}
